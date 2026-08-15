@@ -1,31 +1,32 @@
 import fs from 'fs';
 import { supabase, groq } from '../config.js';
+import { toFile } from 'groq-sdk';
 
 interface IngestMeetingParams {
     file: Express.Multer.File;
     title?: string;
     date?: string;
     duration?: string;
+    attendees?: string[];
 }
 
 export class MeetingService {
-    /**
-     * 1. Uploads audio file to Supabase Storage
-     * 2. Creates initial record (status: 'processing')
-     * 3. Transcribes with Groq Whisper
-     * 4. Updates record with transcript (status: 'completed')
-     */
     static async processTranscriptionPipeline({
         file,
         title,
         date,
         duration,
+        attendees = [],
     }: IngestMeetingParams) {
         const meetingId = crypto.randomUUID();
-        const fileExtension = file.originalname.split('.').pop() || 'm4a';
+
+        // 1. Resolve proper extension (.m4a, .mp3, etc.)
+        const fileExtension = file.originalname.includes('.')
+            ? file.originalname.split('.').pop()
+            : 'm4a';
         const storagePath = `recordings/${meetingId}.${fileExtension}`;
 
-        // 1. Upload audio to Supabase Storage
+        // 2. Upload audio buffer to Supabase Storage
         const fileBuffer = fs.readFileSync(file.path);
         const { error: storageError } = await supabase.storage
             .from('meeting-recordings')
@@ -38,7 +39,7 @@ export class MeetingService {
             throw new Error(`Supabase Storage Error: ${storageError.message}`);
         }
 
-        // 2. Insert initial meeting entry
+        // 3. Insert initial meeting entry
         const { error: dbInitError } = await supabase
             .from('meetings')
             .insert({
@@ -47,6 +48,7 @@ export class MeetingService {
                 date: date || new Date().toLocaleDateString(),
                 duration: duration || '00:00',
                 audio_path: storagePath,
+                attendees: attendees,
                 status: 'processing',
             });
 
@@ -55,16 +57,22 @@ export class MeetingService {
         }
 
         try {
-            // 3. Request Transcription from Groq Whisper
-            const audioReadStream = fs.createReadStream(file.path);
+            // 4. Wrap the stream using Groq's `toFile` helper with an explicit filename
+            const audioFile = await toFile(
+                fs.createReadStream(file.path),
+                `meeting.${fileExtension}`,
+                { type: file.mimetype || 'audio/m4a' }
+            );
+
+            // 5. Request Transcription from Groq Whisper
             const transcription = await groq.audio.transcriptions.create({
-                file: audioReadStream,
+                file: audioFile,
                 model: 'whisper-large-v3',
                 response_format: 'json',
                 temperature: 0.0,
             });
 
-            // 4. Update the DB record with transcript & mark completed
+            // 6. Update DB record with transcript & mark completed
             const { data: updatedRecord, error: dbUpdateError } = await supabase
                 .from('meetings')
                 .update({
@@ -82,7 +90,6 @@ export class MeetingService {
 
             return updatedRecord;
         } catch (error: any) {
-            // Mark as failed if Groq or DB update fails
             await supabase
                 .from('meetings')
                 .update({ status: 'failed', updated_at: new Date().toISOString() })
@@ -97,9 +104,6 @@ export class MeetingService {
         }
     }
 
-    /**
-     * Fetch all meetings for Explore Screen
-     */
     static async getAllMeetings() {
         const { data, error } = await supabase
             .from('meetings')
