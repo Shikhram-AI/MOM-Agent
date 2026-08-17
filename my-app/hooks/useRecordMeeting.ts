@@ -1,11 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Platform, Alert } from 'react-native';
-import {
-    useAudioRecorder,
-    AudioModule,
-    RecordingPresets,
-    setAudioModeAsync,
-} from 'expo-audio';
+import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio';
 import { API_BASE_URL } from './api';
 
 interface UploadPayload {
@@ -40,6 +35,14 @@ export const useRecordMeeting = () => {
     };
 
     /**
+     * Explicitly reset seconds counter & clear any running interval
+     */
+    const resetTimer = () => {
+        if (timerRef.current) clearInterval(timerRef.current);
+        setSecondsElapsed(0);
+    };
+
+    /**
      * Start recording audio with expo-audio
      */
     const startRecording = async () => {
@@ -65,6 +68,7 @@ export const useRecordMeeting = () => {
             setSecondsElapsed(0);
 
             // 4. Start timer
+            if (timerRef.current) clearInterval(timerRef.current);
             timerRef.current = setInterval(() => {
                 setSecondsElapsed((prev) => prev + 1);
             }, 1000);
@@ -152,5 +156,6 @@ export const useRecordMeeting = () => {
         startRecording,
         stopRecording,
         uploadAndTranscribe,
+        resetTimer,
     };
 };

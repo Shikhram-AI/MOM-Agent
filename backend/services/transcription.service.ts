@@ -19,14 +19,12 @@ export class MeetingService {
         attendees = [],
     }: IngestMeetingParams) {
         const meetingId = crypto.randomUUID();
-
-        // 1. Resolve proper extension (.m4a, .mp3, etc.)
         const fileExtension = file.originalname.includes('.')
             ? file.originalname.split('.').pop()
             : 'm4a';
         const storagePath = `recordings/${meetingId}.${fileExtension}`;
 
-        // 2. Upload audio buffer to Supabase Storage
+        // 1. Upload audio to Supabase Storage
         const fileBuffer = fs.readFileSync(file.path);
         const { error: storageError } = await supabase.storage
             .from('meeting-recordings')
@@ -39,7 +37,7 @@ export class MeetingService {
             throw new Error(`Supabase Storage Error: ${storageError.message}`);
         }
 
-        // 3. Insert initial meeting entry
+        // 2. Insert initial meeting entry
         const { error: dbInitError } = await supabase
             .from('meetings')
             .insert({
@@ -57,14 +55,14 @@ export class MeetingService {
         }
 
         try {
-            // 4. Wrap the stream using Groq's `toFile` helper with an explicit filename
+            // 3. Prepare audio stream for Groq
             const audioFile = await toFile(
                 fs.createReadStream(file.path),
                 `meeting.${fileExtension}`,
                 { type: file.mimetype || 'audio/m4a' }
             );
 
-            // 5. Request Transcription from Groq Whisper
+            // 4. Request Transcription from Groq Whisper
             const transcription = await groq.audio.transcriptions.create({
                 file: audioFile,
                 model: 'whisper-large-v3',
@@ -72,7 +70,7 @@ export class MeetingService {
                 temperature: 0.0,
             });
 
-            // 6. Update DB record with transcript & mark completed
+            // 5. Update DB record with transcript & mark completed
             const { data: updatedRecord, error: dbUpdateError } = await supabase
                 .from('meetings')
                 .update({
@@ -88,6 +86,25 @@ export class MeetingService {
                 throw new Error(`Supabase DB Update Error: ${dbUpdateError.message}`);
             }
 
+            // 6. Trigger n8n Agent Webhook
+            const n8nUrl = process.env.N8N_WEBHOOK_URL;
+            if (n8nUrl) {
+                fetch(n8nUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        meetingId: updatedRecord.id,
+                        title: updatedRecord.title,
+                        date: updatedRecord.date,
+                        duration: updatedRecord.duration,
+                        attendees: updatedRecord.attendees,
+                        transcript: updatedRecord.transcript,
+                    }),
+                }).catch((err) => {
+                    console.error('[n8n Webhook Error]:', err.message);
+                });
+            }
+
             return updatedRecord;
         } catch (error: any) {
             await supabase
@@ -97,7 +114,6 @@ export class MeetingService {
 
             throw error;
         } finally {
-            // Clean up local temp disk file
             if (fs.existsSync(file.path)) {
                 fs.unlink(file.path, () => { });
             }
