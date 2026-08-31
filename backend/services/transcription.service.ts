@@ -4,162 +4,151 @@ import { supabase, groq } from '../config.js';
 import { toFile } from 'groq-sdk';
 
 interface IngestMeetingParams {
-    file: Express.Multer.File;
-    title?: string;
-    date?: string;
-    duration?: string;
-    attendees?: string[];
+  file: Express.Multer.File;
+  title?: string;
+  date?: string;
+  duration?: string;
+  attendees?: string[];
 }
 
 export class MeetingService {
-    static async processTranscriptionPipeline({
-        file,
-        title,
-        date,
-        duration,
-        attendees = [],
-    }: IngestMeetingParams) {
-        const meetingId = randomUUID();
+  static async processTranscriptionPipeline({
+    file,
+    title,
+    date,
+    duration,
+    attendees = [],
+  }: IngestMeetingParams) {
+    const meetingId = randomUUID();
+    const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || 'm4a';
+    const storagePath = `recordings/${meetingId}.${fileExtension}`;
 
-        const fileExtension =
-            file.originalname.split('.').pop()?.toLowerCase() || 'm4a';
+    let meetingCreated = false;
 
-        const storagePath = `recordings/${meetingId}.${fileExtension}`;
+    try {
+      // 1. Upload audio to Supabase Storage
+      const fileBuffer = await fs.promises.readFile(file.path);
 
-        let meetingCreated = false;
+      const { error: storageError } = await supabase.storage
+        .from('meeting-recordings')
+        .upload(storagePath, fileBuffer, {
+          contentType: file.mimetype || 'audio/m4a',
+          upsert: true,
+        });
 
-        try {
-            // 1. Upload audio to Supabase Storage
-            const fileBuffer = await fs.promises.readFile(file.path);
+      if (storageError) {
+        throw new Error(`Supabase Storage Error: ${storageError.message}`);
+      }
 
-            const { error: storageError } = await supabase.storage
-                .from('meeting-recordings')
-                .upload(storagePath, fileBuffer, {
-                    contentType: file.mimetype || 'audio/m4a',
-                    upsert: true,
-                });
+      // 2. Insert initial meeting entry
+      const { error: dbInitError } = await supabase
+        .from('meetings')
+        .insert({
+          id: meetingId,
+          title: title || 'Untitled Meeting',
+          date: date || new Date().toISOString(),
+          duration: duration || '00:00',
+          audio_path: storagePath,
+          attendees,
+          status: 'processing',
+        });
 
-            if (storageError) {
-                throw new Error(
-                    `Supabase Storage Error: ${storageError.message}`
-                );
-            }
+      if (dbInitError) {
+        throw new Error(`Supabase DB Insert Error: ${dbInitError.message}`);
+      }
 
-            // 2. Insert initial meeting entry
-            const { error: dbInitError } = await supabase
-                .from('meetings')
-                .insert({
-                    id: meetingId,
-                    title: title || 'Untitled Meeting',
-                    date: date || new Date().toISOString(),
-                    duration: duration || '00:00',
-                    audio_path: storagePath,
-                    attendees,
-                    status: 'processing',
-                });
+      meetingCreated = true;
 
-            if (dbInitError) {
-                throw new Error(
-                    `Supabase DB Insert Error: ${dbInitError.message}`
-                );
-            }
+      // 3. Prepare audio stream for Groq
+      const audioFile = await toFile(
+        fs.createReadStream(file.path),
+        `meeting.${fileExtension}`,
+        { type: file.mimetype || 'audio/m4a' }
+      );
 
-            meetingCreated = true;
+      // 4. Request transcription from Groq Whisper with Hinglish technical context
+      const transcription = await groq.audio.transcriptions.create({
+        file: audioFile,
+        model: 'whisper-large-v3',
+        response_format: 'json',
+        temperature: 0.0,
+        prompt: 'Technical meeting discussion in English and Hindi (Hinglish). Topics include software architecture, APIs, frontend UI, backend deployment, database, integrations, task assignments, and project deadlines.',
+      });
 
-            // 3. Prepare audio for Groq
-            const audioFile = await toFile(
-                fs.createReadStream(file.path),
-                `meeting.${fileExtension}`,
-                {
-                    type: file.mimetype || 'audio/m4a',
-                }
-            );
+      // 5. Update DB record with transcript & mark completed
+      const { data: updatedRecord, error: dbUpdateError } = await supabase
+        .from('meetings')
+        .update({
+          transcript: transcription.text,
+          status: 'completed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', meetingId)
+        .select()
+        .single();
 
-            // 4. Request transcription from Groq Whisper
-            const transcription = await groq.audio.transcriptions.create({
-                file: audioFile,
-                model: 'whisper-large-v3',
-                response_format: 'json',
-                temperature: 0.0,
-            });
+      if (dbUpdateError) {
+        throw new Error(`Supabase DB Update Error: ${dbUpdateError.message}`);
+      }
 
-            // 5. Update DB record with transcript & mark completed
-            const { data: updatedRecord, error: dbUpdateError } =
-                await supabase
-                    .from('meetings')
-                    .update({
-                        transcript: transcription.text,
-                        status: 'completed',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', meetingId)
-                    .select()
-                    .single();
+      // 6. Trigger Make / Agent Webhook for LLM processing via OpenRouter
+      const webhookUrl = process.env.MAKE_WEBHOOK_URL;
 
-            if (dbUpdateError) {
-                throw new Error(
-                    `Supabase DB Update Error: ${dbUpdateError.message}`
-                );
-            }
+      if (webhookUrl) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            meetingId: updatedRecord.id,
+            title: updatedRecord.title,
+            date: updatedRecord.date,
+            duration: updatedRecord.duration,
+            attendees: updatedRecord.attendees,
+            transcript: updatedRecord.transcript,
+          }),
+        }).catch((error: unknown) => {
+          console.error(
+            '[Webhook Agent Error]:',
+            error instanceof Error ? error.message : error
+          );
+        });
+      }
 
-            // 6. Trigger n8n Agent Webhook
-            const n8nUrl = process.env.N8N_WEBHOOK_URL;
+      return updatedRecord;
+    } catch (error: unknown) {
+      if (meetingCreated) {
+        await supabase
+          .from('meetings')
+          .update({
+            status: 'failed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', meetingId);
+      }
 
-            if (n8nUrl) {
-                fetch(n8nUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        meetingId: updatedRecord.id,
-                        title: updatedRecord.title,
-                        date: updatedRecord.date,
-                        duration: updatedRecord.duration,
-                        attendees: updatedRecord.attendees,
-                        transcript: updatedRecord.transcript,
-                    }),
-                }).catch((error: unknown) => {
-                    console.error(
-                        '[n8n Webhook Error]:',
-                        error instanceof Error ? error.message : error
-                    );
-                });
-            }
+      throw error;
+    } finally {
+      // 7. Cleanup local Multer temp file
+      try {
+        await fs.promises.unlink(file.path);
+      } catch {
+        // File already cleaned up or moved
+      }
+    }
+  }
 
-            return updatedRecord;
-        } catch (error: unknown) {
-            if (meetingCreated) {
-                await supabase
-                    .from('meetings')
-                    .update({
-                        status: 'failed',
-                        updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', meetingId);
-            }
+  static async getAllMeetings() {
+    const { data, error } = await supabase
+      .from('meetings')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-            throw error;
-        } finally {
-            // Always remove the temporary Multer file
-            try {
-                await fs.promises.unlink(file.path);
-            } catch {
-                // File may already have been removed
-            }
-        }
+    if (error) {
+      throw new Error(`Supabase Fetch Error: ${error.message}`);
     }
 
-    static async getAllMeetings() {
-        const { data, error } = await supabase
-            .from('meetings')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            throw new Error(`Supabase Fetch Error: ${error.message}`);
-        }
-
-        return data;
-    }
+    return data;
+  }
 }

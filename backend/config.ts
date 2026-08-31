@@ -4,24 +4,34 @@ import Groq from 'groq-sdk';
 
 dotenv.config();
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const {
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY,
+    GROQ_API_KEY,
+    MAKE_WEBHOOK_URL,
+    N8N_WEBHOOK_URL,
+    PORT = '3000',
+    NODE_ENV = 'development',
+} = process.env;
 
+// Required Environment Variable Validations
 if (!SUPABASE_URL) {
-    throw new Error('Missing SUPABASE_URL in environment variables.');
+    throw new Error('[Config Error] Missing SUPABASE_URL in environment variables.');
 }
 
 if (!SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error(
-        'Missing SUPABASE_SERVICE_ROLE_KEY in environment variables.'
-    );
+    throw new Error('[Config Error] Missing SUPABASE_SERVICE_ROLE_KEY in environment variables.');
 }
 
 if (!GROQ_API_KEY) {
-    throw new Error('Missing GROQ_API_KEY in environment variables.');
+    throw new Error('[Config Error] Missing GROQ_API_KEY in environment variables.');
 }
 
+if (!MAKE_WEBHOOK_URL) {
+    console.warn('[Config Warning] MAKE_WEBHOOK_URL is defined. Webhook triggering will be skipped.');
+}
+
+// Initialize Supabase Client with Service Role (Admin privileges, no session persistence)
 export const supabase = createClient(
     SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY,
@@ -33,6 +43,13 @@ export const supabase = createClient(
     }
 );
 
+// Initialize Groq SDK Client
 export const groq = new Groq({
     apiKey: GROQ_API_KEY,
 });
+
+export const CONFIG = {
+    PORT: parseInt(PORT, 10),
+    NODE_ENV,
+    MAKE_WEBHOOK_URL,
+} as const;
