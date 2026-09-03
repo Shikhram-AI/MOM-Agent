@@ -21,23 +21,39 @@ export const useExploreMeetings = () => {
     const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
+    const isMountedRef = useRef<boolean>(true);
     const isInitialMount = useRef<boolean>(true);
 
-    // Track polling state internally to prevent 4k+ requests
+    // Track polling state internally to prevent runaway loops
     const pollCountRef = useRef<number>(0);
     const processingIdsRef = useRef<string>('');
+
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => {
+            isMountedRef.current = false;
+        };
+    }, []);
 
     const fetchMeetings = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'silent') => {
         if (mode === 'initial') setIsLoading(true);
         else if (mode === 'refresh') setIsRefreshing(true);
 
-        setError(null);
+        if (isMountedRef.current) {
+            setError(null);
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s network timeout
 
         try {
             const response = await fetch(`${API_BASE_URL}/meetings`, {
                 method: 'GET',
                 headers: { Accept: 'application/json' },
+                signal: controller.signal,
             });
+
+            clearTimeout(timeoutId);
 
             const json = await response.json();
 
@@ -45,7 +61,7 @@ export const useExploreMeetings = () => {
                 throw new Error(json.error || 'Failed to fetch meetings.');
             }
 
-            const mappedData: MeetingRecord[] = (json.data || []).map((item: any) => {
+            const mappedData: MeetingRecord[] = (json.data || []).map((item: any, index: number) => {
                 let attendeesList: string[] = [];
                 if (Array.isArray(item.attendees)) {
                     attendeesList = item.attendees;
@@ -58,26 +74,37 @@ export const useExploreMeetings = () => {
                 }
 
                 return {
-                    id: item.id,
+                    id: item.id ? String(item.id) : `meeting-${index}`,
                     title: item.title || 'Untitled Meeting',
-                    date: item.date,
+                    date: item.date || 'Recent',
                     duration: item.duration || '00:00',
                     status: (item.status as MoMStatus) || 'processing',
                     attendees: attendeesList,
                     attendeesCount: attendeesList.length,
-                    transcript: item.transcript,
-                    created_at: item.created_at,
+                    transcript: item.transcript || '',
+                    created_at: item.created_at || new Date().toISOString(),
                 };
             });
 
-            setMeetings(mappedData);
+            if (isMountedRef.current) {
+                setMeetings(mappedData);
+            }
         } catch (err: any) {
-            console.error('Error fetching meetings:', err);
-            setError(err.message || 'Unable to load recordings.');
+            if (err.name === 'AbortError') {
+                console.warn('Meetings fetch timed out');
+            } else {
+                console.error('Error fetching meetings:', err);
+            }
+            if (isMountedRef.current) {
+                setError(err.message || 'Unable to load recordings.');
+            }
         } finally {
-            setIsLoading(false);
-            setIsRefreshing(false);
-            isInitialMount.current = false;
+            clearTimeout(timeoutId);
+            if (isMountedRef.current) {
+                setIsLoading(false);
+                setIsRefreshing(false);
+                isInitialMount.current = false;
+            }
         }
     }, []);
 
@@ -88,34 +115,29 @@ export const useExploreMeetings = () => {
 
     // 2. Controlled Polling Logic (30s and 60s checks only)
     useEffect(() => {
-        // Generate a string signature of currently processing IDs
         const currentProcessingIds = meetings
             .filter((m) => m.status === 'processing')
             .map((m) => m.id)
             .sort()
             .join(',');
 
-        // If no meetings are processing, reset trackers and do nothing
         if (!currentProcessingIds) {
             pollCountRef.current = 0;
             processingIdsRef.current = '';
             return;
         }
 
-        // If a NEW meeting was added to the processing list, reset the timer count
         if (currentProcessingIds !== processingIdsRef.current) {
             pollCountRef.current = 0;
             processingIdsRef.current = currentProcessingIds;
         }
 
-        // Schedule exactly 2 fetches: one at 30s, one at 60s
         if (pollCountRef.current < 2) {
             const timer = setTimeout(() => {
                 pollCountRef.current += 1;
                 fetchMeetings('silent');
-            }, 30000); // 30-second delay
+            }, 30000);
 
-            // Cleanup timeout if component unmounts or state changes
             return () => clearTimeout(timer);
         }
     }, [meetings, fetchMeetings]);

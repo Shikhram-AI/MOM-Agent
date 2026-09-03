@@ -10,25 +10,28 @@ interface MeetingCardProps {
 }
 
 export const MeetingCard: React.FC<MeetingCardProps> = ({ item, onPress }) => {
+    const count = item.attendeesCount ?? item.attendees?.length ?? 0;
+
     return (
         <TouchableOpacity
             activeOpacity={0.7}
             style={styles.card}
             onPress={onPress}
+            disabled={!onPress}
         >
             <Text style={styles.meetingTitle} numberOfLines={1}>
-                {item.title}
+                {item.title || 'Untitled Meeting'}
             </Text>
 
             <View style={styles.metaRow}>
                 <View style={styles.metaItem}>
                     <Calendar size={13} color="#64748B" />
-                    <Text style={styles.metaText}>{item.date}</Text>
+                    <Text style={styles.metaText}>{item.date || 'Recent'}</Text>
                 </View>
 
                 <View style={styles.metaItem}>
                     <Clock size={13} color="#64748B" />
-                    <Text style={styles.metaText}>{item.duration}</Text>
+                    <Text style={styles.metaText}>{item.duration || '00:00'}</Text>
                 </View>
             </View>
 
@@ -36,16 +39,15 @@ export const MeetingCard: React.FC<MeetingCardProps> = ({ item, onPress }) => {
                 <View style={styles.footerLeft}>
                     <View style={styles.attendeesGroup}>
                         <Users size={13} color="#64748B" strokeWidth={2} />
-
                         <Text style={styles.attendeesText}>
-                            {item.attendeesCount} {item.attendeesCount === 1 ? 'attendee' : 'attendees'}
+                            {count} {count === 1 ? 'attendee' : 'attendees'}
                         </Text>
                     </View>
 
-                    <MeetingStatusBadge status={item.status} />
+                    <MeetingStatusBadge status={item.status || 'processing'} />
                 </View>
 
-                <ChevronRight size={16} color="#CBD5E1" />
+                {onPress && <ChevronRight size={16} color="#CBD5E1" />}
             </View>
         </TouchableOpacity>
     );

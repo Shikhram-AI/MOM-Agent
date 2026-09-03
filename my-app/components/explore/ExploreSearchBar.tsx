@@ -14,13 +14,16 @@ export const ExploreSearchBar: React.FC<ExploreSearchBarProps> = ({
     return (
         <View style={styles.searchContainer}>
             <Search size={16} color="#94A3B8" />
-            
+
             <TextInput
                 style={styles.searchInput}
                 placeholder="Search by meeting title..."
                 placeholderTextColor="#94A3B8"
                 value={searchQuery}
                 onChangeText={onChangeSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
             />
         </View>
     );

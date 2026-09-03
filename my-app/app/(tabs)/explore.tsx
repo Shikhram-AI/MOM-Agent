@@ -1,5 +1,15 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, Platform, RefreshControl, ActivityIndicator, } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  StatusBar,
+  Platform,
+  RefreshControl,
+  ActivityIndicator,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { AlertCircle, FileText, RefreshCw } from 'lucide-react-native';
@@ -13,7 +23,8 @@ export default function ExploreMoMScreen() {
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const { meetings, isLoading, isRefreshing, error, onRefresh, refetch } = useExploreMeetings();
+  const { meetings, isLoading, isRefreshing, error, onRefresh, refetch } =
+    useExploreMeetings();
 
   // Auto-refresh when user navigates back to this tab
   useFocusEffect(
@@ -22,8 +33,8 @@ export default function ExploreMoMScreen() {
     }, [refetch])
   );
 
-  const filteredMeetings = meetings.filter((item) =>
-    item.title.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredMeetings = (meetings || []).filter((item) =>
+    (item.title || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -32,14 +43,10 @@ export default function ExploreMoMScreen() {
         styles.screen,
         {
           paddingTop: Math.max(insets.top, Platform.OS === 'android' ? 24 : 16),
-          paddingBottom: Math.max(insets.bottom, 16),
         },
       ]}
     >
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#FAFAFA"
-      />
+      <StatusBar barStyle="dark-content" backgroundColor="#FAFAFA" />
 
       {/* Header Bar */}
       <ExploreHeader />
@@ -71,7 +78,7 @@ export default function ExploreMoMScreen() {
       ) : (
         <FlatList
           data={filteredMeetings}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item, index) => item?.id ? String(item.id) : `meeting-${index}`}
           renderItem={({ item }) => <MeetingCard item={item} />}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -87,7 +94,6 @@ export default function ExploreMoMScreen() {
             <View style={styles.emptyContainer}>
               <FileText size={40} color="#CBD5E1" />
               <Text style={styles.emptyTitle}>No Meetings Found</Text>
-
               <Text style={styles.emptySubtitle}>
                 {searchQuery
                   ? 'No recordings match your search query.'
@@ -122,6 +128,7 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   errorContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -131,6 +138,7 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 10,
     marginBottom: 12,
+    maxHeight: 48,
   },
   errorText: {
     flex: 1,

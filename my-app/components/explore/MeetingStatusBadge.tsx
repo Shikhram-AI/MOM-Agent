@@ -4,7 +4,7 @@ import { CheckCircle2, Loader2, AlertCircle } from 'lucide-react-native';
 import { MoMStatus } from '@/hooks/useExploreMeetings';
 
 interface MeetingStatusBadgeProps {
-    status: MoMStatus;
+    status: MoMStatus | string;
 }
 
 export const MeetingStatusBadge: React.FC<MeetingStatusBadgeProps> = ({ status }) => {
@@ -16,18 +16,19 @@ export const MeetingStatusBadge: React.FC<MeetingStatusBadgeProps> = ({ status }
                     <Text style={[styles.badgeText, styles.badgeTextCompleted]}>Transcribed</Text>
                 </View>
             );
-        case 'processing':
-            return (
-                <View style={[styles.badgeContainer, styles.badgeProcessing]}>
-                    <Loader2 size={12} color="#D97706" strokeWidth={2.2} />
-                    <Text style={[styles.badgeText, styles.badgeTextProcessing]}>Transcribing</Text>
-                </View>
-            );
         case 'failed':
             return (
                 <View style={[styles.badgeContainer, styles.badgeFailed]}>
                     <AlertCircle size={12} color="#DC2626" strokeWidth={2.2} />
                     <Text style={[styles.badgeText, styles.badgeTextFailed]}>Failed</Text>
+                </View>
+            );
+        case 'processing':
+        default:
+            return (
+                <View style={[styles.badgeContainer, styles.badgeProcessing]}>
+                    <Loader2 size={12} color="#D97706" strokeWidth={2.2} />
+                    <Text style={[styles.badgeText, styles.badgeTextProcessing]}>Transcribing</Text>
                 </View>
             );
     }

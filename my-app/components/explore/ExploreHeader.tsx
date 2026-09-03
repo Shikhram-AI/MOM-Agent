@@ -12,11 +12,11 @@ export const ExploreHeader: React.FC = () => {
                 <Text style={styles.screenHeading}>Meeting Minutes</Text>
                 <Text style={styles.screenSubheading}>Recent recordings & transcripts</Text>
             </View>
-            
+
             <TouchableOpacity
                 activeOpacity={0.85}
                 style={styles.newRecordBtn}
-                onPress={() => router.push('/' as any)}
+                onPress={() => router.navigate('/(tabs)')}
             >
                 <Plus size={18} color="#FFFFFF" strokeWidth={2.5} />
                 <Text style={styles.newRecordText}>Record</Text>

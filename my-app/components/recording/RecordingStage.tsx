@@ -7,21 +7,41 @@ interface RecordingStageProps {
     formattedTime: string;
 }
 
-export const RecordingStage: React.FC<RecordingStageProps> = ({ isRecording, formattedTime, }) => {
+export const RecordingStage: React.FC<RecordingStageProps> = ({
+    isRecording,
+    formattedTime,
+}) => {
     const pulseAnim = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
+        let loopAnimation: Animated.CompositeAnimation | null = null;
+
         if (isRecording) {
-            Animated.loop(
+            loopAnimation = Animated.loop(
                 Animated.sequence([
-                    Animated.timing(pulseAnim, { toValue: 1.25, duration: 1000, useNativeDriver: true }),
-                    Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+                    Animated.timing(pulseAnim, {
+                        toValue: 1.25,
+                        duration: 1000,
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(pulseAnim, {
+                        toValue: 1,
+                        duration: 1000,
+                        useNativeDriver: true,
+                    }),
                 ])
-            ).start();
+            );
+            loopAnimation.start();
         } else {
             pulseAnim.setValue(1);
         }
-    }, [isRecording]);
+
+        return () => {
+            if (loopAnimation) {
+                loopAnimation.stop();
+            }
+        };
+    }, [isRecording, pulseAnim]);
 
     return (
         <View style={styles.centerStage}>
@@ -41,8 +61,17 @@ export const RecordingStage: React.FC<RecordingStageProps> = ({ isRecording, for
                     />
                 )}
 
-                <View style={[styles.micOrb, isRecording ? styles.micOrbActive : styles.micOrbIdle]}>
-                    <Mic size={36} color={isRecording ? '#EF4444' : '#0F172A'} strokeWidth={1.8} />
+                <View
+                    style={[
+                        styles.micOrb,
+                        isRecording ? styles.micOrbActive : styles.micOrbIdle,
+                    ]}
+                >
+                    <Mic
+                        size={36}
+                        color={isRecording ? '#EF4444' : '#0F172A'}
+                        strokeWidth={1.8}
+                    />
                 </View>
             </View>
 
@@ -64,21 +93,21 @@ const styles = StyleSheet.create({
     centerStage: {
         flex: 1,
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
     },
     visualContainer: {
         width: 140,
         height: 140,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 20
+        marginBottom: 20,
     },
     pulseRing: {
         position: 'absolute',
         width: 140,
         height: 140,
         borderRadius: 70,
-        backgroundColor: '#EF4444'
+        backgroundColor: '#EF4444',
     },
     micOrb: {
         width: 90,
@@ -86,35 +115,39 @@ const styles = StyleSheet.create({
         borderRadius: 45,
         alignItems: 'center',
         justifyContent: 'center',
-        elevation: 3
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
     },
     micOrbIdle: {
         backgroundColor: '#FFFFFF',
         borderWidth: 1,
-        borderColor: '#E2E8F0'
+        borderColor: '#E2E8F0',
     },
     micOrbActive: {
         backgroundColor: '#FEF2F2',
         borderWidth: 1.5,
-        borderColor: '#FECACA'
+        borderColor: '#FECACA',
     },
     timerRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        marginBottom: 8
+        marginBottom: 8,
     },
     timer: {
         fontSize: 38,
         fontWeight: '700',
         color: '#0F172A',
-        fontVariant: ['tabular-nums']
+        fontVariant: ['tabular-nums'],
     },
     hintText: {
         fontSize: 13,
         color: '#94A3B8',
         textAlign: 'center',
         maxWidth: 240,
-        lineHeight: 18
+        lineHeight: 18,
     },
 });

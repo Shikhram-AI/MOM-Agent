@@ -18,6 +18,7 @@ export const useRecordMeeting = () => {
     const [isUploading, setIsUploading] = useState<boolean>(false);
 
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const recordedDurationRef = useRef<number>(0);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -40,6 +41,7 @@ export const useRecordMeeting = () => {
     const resetTimer = () => {
         if (timerRef.current) clearInterval(timerRef.current);
         setSecondsElapsed(0);
+        recordedDurationRef.current = 0;
     };
 
     /**
@@ -66,11 +68,16 @@ export const useRecordMeeting = () => {
 
             setIsRecording(true);
             setSecondsElapsed(0);
+            recordedDurationRef.current = 0;
 
             // 4. Start timer
             if (timerRef.current) clearInterval(timerRef.current);
             timerRef.current = setInterval(() => {
-                setSecondsElapsed((prev) => prev + 1);
+                setSecondsElapsed((prev) => {
+                    const next = prev + 1;
+                    recordedDurationRef.current = next;
+                    return next;
+                });
             }, 1000);
         } catch (err: any) {
             console.error('Failed to start recording:', err);
@@ -89,9 +96,9 @@ export const useRecordMeeting = () => {
             await audioRecorder.stop();
             await setAudioModeAsync({ allowsRecording: false });
 
-            // In expo-audio, audioRecorder.uri contains the recorded file path
+            // Retrieve path from audioRecorder
             const uri = audioRecorder.uri;
-            return uri;
+            return uri || null;
         } catch (err) {
             console.error('Failed to stop recording:', err);
             return null;
@@ -119,20 +126,20 @@ export const useRecordMeeting = () => {
             formData.append('audio', {
                 uri: fileUri,
                 name: `meeting_${Date.now()}.${fileExtension}`,
-                type: `audio/${fileExtension}`,
+                type: `audio/${fileExtension === 'm4a' ? 'mp4' : fileExtension}`,
             } as any);
 
             formData.append('title', title.trim() || 'Untitled Meeting');
             formData.append('date', date.trim() || new Date().toLocaleDateString());
-            formData.append('duration', formatTimer(secondsElapsed));
-            formData.append('attendees', JSON.stringify(attendees));
+            formData.append('duration', formatTimer(recordedDurationRef.current || secondsElapsed));
+            formData.append('attendees', JSON.stringify(attendees || []));
 
+            // Note: Do NOT set 'Content-Type': 'multipart/form-data' header manually
             const response = await fetch(`${API_BASE_URL}/meetings/transcribe`, {
                 method: 'POST',
                 body: formData,
                 headers: {
                     Accept: 'application/json',
-                    'Content-Type': 'multipart/form-data',
                 },
             });
 

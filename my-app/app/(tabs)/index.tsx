@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator, StatusBar, Platform, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  ActivityIndicator,
+  StatusBar,
+  Platform,
+  Alert,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Mic, Square } from 'lucide-react-native';
@@ -53,8 +63,9 @@ export default function RecordMeetingScreen() {
   };
 
   const handleAddEmail = (email: string) => {
-    if (!attendeeEmails.includes(email)) {
-      setAttendeeEmails((prev) => [...prev, email]);
+    const trimmed = email.trim();
+    if (trimmed && !attendeeEmails.includes(trimmed)) {
+      setAttendeeEmails((prev) => [...prev, trimmed]);
     }
   };
 
@@ -63,13 +74,13 @@ export default function RecordMeetingScreen() {
   };
 
   const handleConfirmAndUpload = async () => {
-    if (!recordedUri) return;
+    if (!recordedUri || isUploading) return;
 
     setShowMetadataModal(false);
 
     try {
       await uploadAndTranscribe(recordedUri, {
-        title: meetingName,
+        title: meetingName.trim() || 'Untitled Meeting',
         date: meetingDate,
         attendees: attendeeEmails,
       });
@@ -89,14 +100,11 @@ export default function RecordMeetingScreen() {
         styles.screen,
         {
           paddingTop: Math.max(insets.top, Platform.OS === 'android' ? 24 : 16),
-          paddingBottom: Math.max(insets.bottom, 20),
+          paddingBottom: 20,
         },
       ]}
     >
-      <StatusBar
-        barStyle="dark-content"
-        backgroundColor="#FAFAFA"
-      />
+      <StatusBar barStyle="dark-content" backgroundColor="#FAFAFA" />
 
       {/* Top Bar Header */}
       <RecordingHeader />
@@ -118,7 +126,10 @@ export default function RecordMeetingScreen() {
       <View style={styles.footerSection}>
         <TouchableOpacity
           activeOpacity={0.85}
-          style={[styles.actionButton, isRecording ? styles.actionButtonStop : styles.actionButtonStart]}
+          style={[
+            styles.actionButton,
+            isRecording ? styles.actionButtonStop : styles.actionButtonStart,
+          ]}
           onPress={handleToggleRecord}
         >
           {isRecording ? (
@@ -153,11 +164,7 @@ export default function RecordMeetingScreen() {
       />
 
       {/* Uploading Overlay */}
-      <Modal
-        visible={isUploading}
-        transparent
-        animationType="fade"
-      >
+      <Modal visible={isUploading} transparent animationType="fade">
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingCard}>
             <ActivityIndicator size="large" color="#6366F1" />
@@ -177,10 +184,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FAFAFA',
     paddingHorizontal: 20,
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
   },
   footerSection: {
-    width: '100%'
+    width: '100%',
   },
   actionButton: {
     flexDirection: 'row',
@@ -189,40 +196,40 @@ const styles = StyleSheet.create({
     gap: 10,
     height: 54,
     borderRadius: 14,
-    elevation: 3
+    elevation: 3,
   },
   actionButtonStart: {
-    backgroundColor: '#0F172A'
+    backgroundColor: '#0F172A',
   },
   actionButtonStop: {
-    backgroundColor: '#DC2626'
+    backgroundColor: '#DC2626',
   },
   buttonLabel: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '600'
+    fontWeight: '600',
   },
   loadingOverlay: {
     flex: 1,
     backgroundColor: 'rgba(255, 255, 255, 0.92)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32
+    paddingHorizontal: 32,
   },
   loadingCard: {
-    alignItems: 'center'
+    alignItems: 'center',
   },
   loadingTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: '#0F172A',
     marginTop: 18,
-    marginBottom: 6
+    marginBottom: 6,
   },
   loadingSubtitle: {
     fontSize: 13,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 19
+    lineHeight: 19,
   },
 });

@@ -14,8 +14,9 @@ export const RecordingHeader: React.FC = () => {
             </View>
 
             <TouchableOpacity
+                activeOpacity={0.8}
                 style={styles.exploreLinkBtn}
-                onPress={() => router.push('/explore')}
+                onPress={() => router.navigate('/(tabs)/explore')}
             >
                 <ListFilter size={18} color="#475569" />
                 <Text style={styles.exploreLinkText}>Explore</Text>
@@ -28,7 +29,7 @@ const styles = StyleSheet.create({
     topHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between'
+        justifyContent: 'space-between',
     },
     aiBadge: {
         flexDirection: 'row',
@@ -37,12 +38,12 @@ const styles = StyleSheet.create({
         backgroundColor: '#EEF2FF',
         paddingHorizontal: 10,
         paddingVertical: 5,
-        borderRadius: 20
+        borderRadius: 20,
     },
     aiBadgeText: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#4F46E5'
+        color: '#4F46E5',
     },
     exploreLinkBtn: {
         flexDirection: 'row',
@@ -51,11 +52,11 @@ const styles = StyleSheet.create({
         paddingVertical: 6,
         paddingHorizontal: 12,
         borderRadius: 20,
-        backgroundColor: '#F1F5F9'
+        backgroundColor: '#F1F5F9',
     },
     exploreLinkText: {
         fontSize: 13,
         fontWeight: '600',
-        color: '#475569'
+        color: '#475569',
     },
 });
