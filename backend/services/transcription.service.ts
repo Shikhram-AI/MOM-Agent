@@ -72,7 +72,57 @@ export class MeetingService {
         model: 'whisper-large-v3',
         response_format: 'json',
         temperature: 0.0,
-        prompt: 'Technical meeting discussion in English and Hindi (Hinglish). Topics include software architecture, APIs, frontend UI, backend deployment, database, integrations, task assignments, and project deadlines.',
+
+        prompt: `
+This is a technical software/product development meeting spoken in English, Hindi, and Hinglish.
+
+Transcribe the meeting faithfully and preserve the original meaning.
+
+IMPORTANT TRANSCRIPTION RULES:
+- Preserve English technical terms exactly when they are spoken.
+- Do NOT translate technical terms into Hindi.
+- Do NOT replace technical words with phonetically similar Hindi words.
+- Pay special attention to software development terminology, product names, platform names, programming languages, frameworks, libraries, tools, APIs, deployment platforms, databases, AI/LLM terminology, UI/UX terminology, and meeting/task terminology.
+- Preserve names of people, products, companies, projects, websites, and platforms as accurately as possible.
+- Preserve dates, times, percentages, deadlines, and quantities exactly.
+- Preserve words such as "today", "tomorrow", "Tuesday", "Wednesday", "EOD", "deadline", "meeting", "task", "action item", "owner", "integration", and "complete".
+- Do not invent missing words or sentences.
+- Do not summarize or interpret the meeting.
+- Do not turn unclear audio into confident text.
+- If a phrase is unclear, transcribe the closest audible wording rather than inventing a plausible sentence.
+- Remove obvious non-speech artifacts and repeated meaningless fragments when they are clearly transcription noise.
+- Keep the transcript in natural Hinglish when the speaker switches between Hindi and English.
+
+IMPORTANT TECHNICAL VOCABULARY:
+Chatbot, AI agent, MIRA, OpenRouter, Groq, Whisper, LLM, RAG, knowledge base,
+Python, JavaScript, TypeScript, React, React Native, Node.js, Express,
+Streamlit, Llama, FastAPI, Expo, Expo Router, n8n, Make,
+Supabase, MongoDB, MySQL, PostgreSQL,
+API, REST API, backend, frontend, full stack,
+UI, UX, component, responsive, deployment, integration,
+Render, Vercel, AWS, S3, GitHub, Git,
+OTP, authentication, login, signup,
+website, dashboard, portal, mobile app,
+Zoom, Google Meet, WhatsApp,
+Jira, task, issue, sprint,
+course, project, internship, demo,
+action item, deadline, EOD, owner, review.
+
+When technical terms appear inside Hindi sentences, keep the technical terms in their English form.
+
+Example:
+"Python mein backend banana hai"
+should remain:
+"Python mein backend banana hai"
+
+Do not convert it into:
+"पाइथन में बैकएंड बनाना है"
+
+Similarly preserve terms such as:
+"Streamlit", "Llama", "knowledge base", "website integration", "API", "frontend", "backend", "deployment", and "action item".
+
+The output must be ONLY the transcript.
+`,
       });
 
       // 5. Update DB record with transcript & mark completed
