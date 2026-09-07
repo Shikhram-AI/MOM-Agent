@@ -8,7 +8,7 @@ interface IngestMeetingParams {
   date?: string;
   duration?: string;
   attendees?: string[];
-  created_by?: string; // Owner email persistence
+  created_by?: string;
 }
 
 export class MeetingService {
@@ -150,11 +150,17 @@ export class MeetingService {
     }
   }
 
-  static async getAllMeetings() {
-    const { data, error } = await supabase
+  static async getAllMeetings(userEmail?: string) {
+    let query = supabase
       .from('meetings')
       .select('*')
       .order('created_at', { ascending: false });
+
+    if (userEmail && typeof userEmail === 'string' && userEmail.trim()) {
+      query = query.eq('created_by', userEmail.trim().toLowerCase());
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw new Error(`Supabase Fetch Error: ${error.message}`);

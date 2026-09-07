@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
-import { AlertCircle, FileText, RefreshCw } from 'lucide-react-native';
+import { AlertCircle, FileText, RefreshCw, MailCheck } from 'lucide-react-native';
 import { useExploreMeetings } from '@/hooks/useExploreMeetings';
-
+import { storage } from '@/hooks/storage';
 import { ExploreHeader } from '@/components/explore/ExploreHeader';
 import { ExploreSearchBar } from '@/components/explore/ExploreSearchBar';
 import { MeetingCard } from '@/components/explore/MeetingCard';
@@ -22,19 +22,32 @@ import { MeetingCard } from '@/components/explore/MeetingCard';
 export default function ExploreMoMScreen() {
   const insets = useSafeAreaInsets();
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
+  // Read the saved verified email from local storage
+  const loadUserEmail = async () => {
+    const email = await storage.getUserEmail();
+    setUserEmail(email);
+  };
+
+  useEffect(() => {
+    loadUserEmail();
+  }, []);
+
+  // Pass userEmail to hook for backend filtering
   const { meetings, isLoading, isRefreshing, error, onRefresh, refetch } =
-    useExploreMeetings();
+    useExploreMeetings(userEmail);
 
-  // Auto-refresh when user navigates back to this tab
+  // Re-check email and refetch whenever screen regains focus
   useFocusEffect(
     useCallback(() => {
+      loadUserEmail();
       refetch();
     }, [refetch])
   );
 
   const filteredMeetings = (meetings || []).filter((item) =>
-    (item.title || '').toLowerCase().includes(searchQuery.toLowerCase())
+    (item?.title || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -61,9 +74,11 @@ export default function ExploreMoMScreen() {
       {error && (
         <View style={styles.errorContainer}>
           <AlertCircle size={16} color="#DC2626" />
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText} numberOfLines={1}>
+            {error}
+          </Text>
 
-          <TouchableOpacity onPress={() => refetch()}>
+          <TouchableOpacity onPress={() => refetch()} hitSlop={8}>
             <RefreshCw size={14} color="#DC2626" />
           </TouchableOpacity>
         </View>
@@ -73,12 +88,14 @@ export default function ExploreMoMScreen() {
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#6366F1" />
-          <Text style={styles.loadingText}>Loading recordings...</Text>
+          <Text style={styles.loadingText}>Loading your meetings...</Text>
         </View>
       ) : (
         <FlatList
           data={filteredMeetings}
-          keyExtractor={(item, index) => item?.id ? String(item.id) : `meeting-${index}`}
+          keyExtractor={(item, index) =>
+            item?.id ? String(item.id) : `meeting-${index}`
+          }
           renderItem={({ item }) => <MeetingCard item={item} />}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -92,12 +109,18 @@ export default function ExploreMoMScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <FileText size={40} color="#CBD5E1" />
-              <Text style={styles.emptyTitle}>No Meetings Found</Text>
+              <View style={styles.emptyIconCircle}>
+                <FileText size={32} color="#94A3B8" />
+              </View>
+              <Text style={styles.emptyTitle}>
+                {searchQuery ? 'No Results Found' : 'No Meetings Recorded'}
+              </Text>
               <Text style={styles.emptySubtitle}>
                 {searchQuery
-                  ? 'No recordings match your search query.'
-                  : 'Recorded sessions will appear here once submitted.'}
+                  ? 'No meetings match your search query.'
+                  : userEmail
+                    ? `Meetings recorded under ${userEmail} will appear here.`
+                    : 'Verify your email and record a meeting to see minutes here.'}
               </Text>
             </View>
           }
@@ -128,17 +151,16 @@ const styles = StyleSheet.create({
     color: '#64748B',
   },
   errorContainer: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#FEF2F2',
     borderWidth: 1,
     borderColor: '#FECACA',
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 10,
     marginBottom: 12,
-    maxHeight: 48,
   },
   errorText: {
     flex: 1,
@@ -149,17 +171,28 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 70,
+    paddingHorizontal: 24,
     gap: 8,
+  },
+  emptyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#475569',
+    fontWeight: '700',
+    color: '#334155',
   },
   emptySubtitle: {
     fontSize: 13,
     color: '#94A3B8',
     textAlign: 'center',
+    lineHeight: 19,
   },
 });

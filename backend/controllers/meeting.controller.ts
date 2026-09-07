@@ -42,7 +42,6 @@ export class MeetingController {
         try {
             const result = await MeetingService.processTranscriptionPipeline({
                 file,
-
                 title:
                     typeof title === 'string' && title.trim().length > 0
                         ? title.trim()
@@ -90,22 +89,22 @@ export class MeetingController {
         }
     }
 
-    static async getMeetings(_req: Request, res: Response): Promise<void> {
+    static async getMeetings(req: Request, res: Response): Promise<void> {
         try {
-            const meetings = await MeetingService.getAllMeetings();
+            const rawEmail = (req.query.email as string) || (req.query.userEmail as string);
+            const userEmail = typeof rawEmail === 'string' && rawEmail.trim() ? rawEmail.trim().toLowerCase() : undefined;
+
+            const meetings = await MeetingService.getAllMeetings(userEmail);
 
             res.status(200).json({
                 success: true,
                 data: meetings,
             });
-        } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown server error.';
-            console.error('[MeetingController.getMeetings Error]:', errorMessage);
-
+        } catch (error: any) {
+            console.error('[MeetingController.getMeetings Error]:', error);
             res.status(500).json({
                 success: false,
-                error: 'Failed to fetch meetings.',
-                message: process.env.NODE_ENV === 'development' ? errorMessage : undefined,
+                error: error.message || 'Failed to fetch meetings',
             });
         }
     }

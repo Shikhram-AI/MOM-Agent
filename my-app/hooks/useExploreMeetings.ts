@@ -12,10 +12,11 @@ export interface MeetingRecord {
     attendees?: string[];
     attendeesCount: number;
     transcript?: string;
+    created_by?: string;
     created_at: string;
 }
 
-export const useExploreMeetings = () => {
+export const useExploreMeetings = (userEmail?: string | null) => {
     const [meetings, setMeetings] = useState<MeetingRecord[]>([]);
     const [isLoading, setIsLoading] = useState<boolean>(true);
     const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -35,85 +36,100 @@ export const useExploreMeetings = () => {
         };
     }, []);
 
-    const fetchMeetings = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'silent') => {
-        if (mode === 'initial') setIsLoading(true);
-        else if (mode === 'refresh') setIsRefreshing(true);
-
-        if (isMountedRef.current) {
-            setError(null);
-        }
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s network timeout
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/meetings`, {
-                method: 'GET',
-                headers: { Accept: 'application/json' },
-                signal: controller.signal,
-            });
-
-            clearTimeout(timeoutId);
-
-            const json = await response.json();
-
-            if (!response.ok || !json.success) {
-                throw new Error(json.error || 'Failed to fetch meetings.');
+    const fetchMeetings = useCallback(
+        async (mode: 'initial' | 'refresh' | 'silent' = 'silent') => {
+            // If no user email is verified/provided yet, skip request
+            if (!userEmail) {
+                if (isMountedRef.current) {
+                    setMeetings([]);
+                    setIsLoading(false);
+                    setIsRefreshing(false);
+                }
+                return;
             }
 
-            const mappedData: MeetingRecord[] = (json.data || []).map((item: any, index: number) => {
-                let attendeesList: string[] = [];
-                if (Array.isArray(item.attendees)) {
-                    attendeesList = item.attendees;
-                } else if (typeof item.attendees === 'string') {
-                    try {
-                        attendeesList = JSON.parse(item.attendees);
-                    } catch {
-                        attendeesList = [];
-                    }
+            if (mode === 'initial') setIsLoading(true);
+            else if (mode === 'refresh') setIsRefreshing(true);
+
+            if (isMountedRef.current) {
+                setError(null);
+            }
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s network timeout
+
+            try {
+                const cleanEmail = encodeURIComponent(userEmail.trim().toLowerCase());
+                const response = await fetch(`${API_BASE_URL}/meetings?email=${cleanEmail}`, {
+                    method: 'GET',
+                    headers: { Accept: 'application/json' },
+                    signal: controller.signal,
+                });
+
+                clearTimeout(timeoutId);
+
+                const json = await response.json();
+
+                if (!response.ok || !json.success) {
+                    throw new Error(json.error || 'Failed to fetch meetings.');
                 }
 
-                return {
-                    id: item.id ? String(item.id) : `meeting-${index}`,
-                    title: item.title || 'Untitled Meeting',
-                    date: item.date || 'Recent',
-                    duration: item.duration || '00:00',
-                    status: (item.status as MoMStatus) || 'processing',
-                    attendees: attendeesList,
-                    attendeesCount: attendeesList.length,
-                    transcript: item.transcript || '',
-                    created_at: item.created_at || new Date().toISOString(),
-                };
-            });
+                const mappedData: MeetingRecord[] = (json.data || []).map((item: any, index: number) => {
+                    let attendeesList: string[] = [];
+                    if (Array.isArray(item.attendees)) {
+                        attendeesList = item.attendees;
+                    } else if (typeof item.attendees === 'string') {
+                        try {
+                            attendeesList = JSON.parse(item.attendees);
+                        } catch {
+                            attendeesList = [];
+                        }
+                    }
 
-            if (isMountedRef.current) {
-                setMeetings(mappedData);
-            }
-        } catch (err: any) {
-            if (err.name === 'AbortError') {
-                console.warn('Meetings fetch timed out');
-            } else {
-                console.error('Error fetching meetings:', err);
-            }
-            if (isMountedRef.current) {
-                setError(err.message || 'Unable to load recordings.');
-            }
-        } finally {
-            clearTimeout(timeoutId);
-            if (isMountedRef.current) {
-                setIsLoading(false);
-                setIsRefreshing(false);
-                isInitialMount.current = false;
-            }
-        }
-    }, []);
+                    return {
+                        id: item.id ? String(item.id) : `meeting-${index}`,
+                        title: item.title || 'Untitled Meeting',
+                        date: item.date || 'Recent',
+                        duration: item.duration || '00:00',
+                        status: (item.status as MoMStatus) || 'processing',
+                        attendees: attendeesList,
+                        attendeesCount: attendeesList.length,
+                        transcript: item.transcript || '',
+                        created_by: item.created_by || '',
+                        created_at: item.created_at || new Date().toISOString(),
+                    };
+                });
 
-    // 1. Initial Load
+                if (isMountedRef.current) {
+                    setMeetings(mappedData);
+                }
+            } catch (err: any) {
+                if (err.name === 'AbortError') {
+                    console.warn('Meetings fetch timed out');
+                } else {
+                    console.error('Error fetching meetings:', err);
+                }
+                if (isMountedRef.current) {
+                    setError(err.message || 'Unable to load recordings.');
+                }
+            } finally {
+                clearTimeout(timeoutId);
+                if (isMountedRef.current) {
+                    setIsLoading(false);
+                    setIsRefreshing(false);
+                    isInitialMount.current = false;
+                }
+            }
+        },
+        [userEmail]
+    );
+
+    // 1. Initial Load / Re-fetch on userEmail change
     useEffect(() => {
         fetchMeetings(isInitialMount.current ? 'initial' : 'silent');
     }, [fetchMeetings]);
 
-    // 2. Controlled Polling Logic (30s and 60s checks only)
+    // 2. Controlled Polling Logic (30s and 60s checks only for pending transcriptions)
     useEffect(() => {
         const currentProcessingIds = meetings
             .filter((m) => m.status === 'processing')
