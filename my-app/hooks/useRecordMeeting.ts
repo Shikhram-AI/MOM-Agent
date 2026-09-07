@@ -7,6 +7,7 @@ interface UploadPayload {
     title: string;
     date: string;
     attendees: string[];
+    created_by?: string; // <-- 1. Add created_by here
 }
 
 export const useRecordMeeting = () => {
@@ -49,20 +50,17 @@ export const useRecordMeeting = () => {
      */
     const startRecording = async () => {
         try {
-            // 1. Request microphone permissions via AudioModule
             const permission = await AudioModule.requestRecordingPermissionsAsync();
             if (!permission.granted) {
                 Alert.alert('Permission Denied', 'Microphone permission is required to record meetings.');
                 return;
             }
 
-            // 2. Set audio mode for recording
             await setAudioModeAsync({
                 playsInSilentMode: true,
                 allowsRecording: true,
             });
 
-            // 3. Prepare and start recording
             await audioRecorder.prepareToRecordAsync();
             audioRecorder.record();
 
@@ -70,7 +68,6 @@ export const useRecordMeeting = () => {
             setSecondsElapsed(0);
             recordedDurationRef.current = 0;
 
-            // 4. Start timer
             if (timerRef.current) clearInterval(timerRef.current);
             timerRef.current = setInterval(() => {
                 setSecondsElapsed((prev) => {
@@ -96,7 +93,6 @@ export const useRecordMeeting = () => {
             await audioRecorder.stop();
             await setAudioModeAsync({ allowsRecording: false });
 
-            // Retrieve path from audioRecorder
             const uri = audioRecorder.uri;
             return uri || null;
         } catch (err) {
@@ -106,11 +102,11 @@ export const useRecordMeeting = () => {
     };
 
     /**
-     * Upload audio to Express + Groq pipeline
+     * Upload audio to Express + AssemblyAI pipeline
      */
     const uploadAndTranscribe = async (
         audioUri: string,
-        { title, date, attendees }: UploadPayload
+        { title, date, attendees, created_by }: UploadPayload // <-- 2. Destructure created_by
     ) => {
         if (!audioUri) {
             throw new Error('No audio recording found.');
@@ -134,7 +130,11 @@ export const useRecordMeeting = () => {
             formData.append('duration', formatTimer(recordedDurationRef.current || secondsElapsed));
             formData.append('attendees', JSON.stringify(attendees || []));
 
-            // Note: Do NOT set 'Content-Type': 'multipart/form-data' header manually
+            // 3. Append created_by to FormData
+            if (created_by) {
+                formData.append('created_by', created_by.trim().toLowerCase());
+            }
+
             const response = await fetch(`${API_BASE_URL}/meetings/transcribe`, {
                 method: 'POST',
                 body: formData,

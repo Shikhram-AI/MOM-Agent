@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -10,7 +10,8 @@ import {
     ScrollView,
     KeyboardAvoidingView,
 } from 'react-native';
-import { CheckCircle2, Users, Plus, X } from 'lucide-react-native';
+import { CheckCircle2, Users, Plus, X, Check } from 'lucide-react-native';
+import { storage } from '@/hooks/storage';
 
 interface MetadataModalProps {
     visible: boolean;
@@ -38,18 +39,58 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({
     onSubmit,
 }) => {
     const [currentEmailInput, setCurrentEmailInput] = useState<string>('');
+    const [savedDirectory, setSavedDirectory] = useState<string[]>([]);
+    const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
 
-    const handleAdd = () => {
+    // Load saved attendees and user email whenever the modal opens
+    useEffect(() => {
+        if (visible) {
+            const loadSavedData = async () => {
+                const [attendees, userEmail] = await Promise.all([
+                    storage.getSavedAttendees(),
+                    storage.getUserEmail(),
+                ]);
+                setSavedDirectory(attendees);
+                if (userEmail) {
+                    setCurrentUserEmail(userEmail.toLowerCase());
+                }
+            };
+            loadSavedData();
+        }
+    }, [visible]);
+
+    const handleAdd = async () => {
         const trimmed = currentEmailInput.trim().toLowerCase().replace(/[, ]+/g, '');
-        if (trimmed) {
+        if (trimmed && trimmed.includes('@')) {
             onAddEmail(trimmed);
+            // Auto-save to persistent directory if not already stored
+            if (!savedDirectory.includes(trimmed)) {
+                const updated = await storage.addAttendees([trimmed]);
+                setSavedDirectory(updated);
+            }
             setCurrentEmailInput('');
         }
     };
 
-    const handleConfirm = () => {
-        if (currentEmailInput.trim()) {
-            handleAdd();
+    const handleToggleSavedContact = (email: string) => {
+        const target = email.toLowerCase();
+        const existingIndex = attendeeEmails.findIndex(
+            (e) => e.toLowerCase() === target
+        );
+
+        if (existingIndex >= 0) {
+            onRemoveEmail(existingIndex);
+        } else {
+            onAddEmail(target);
+        }
+    };
+
+    const handleConfirm = async () => {
+        const trimmed = currentEmailInput.trim().toLowerCase().replace(/[, ]+/g, '');
+        if (trimmed && trimmed.includes('@')) {
+            onAddEmail(trimmed);
+            await storage.addAttendees([trimmed]);
+            setCurrentEmailInput('');
         }
         onSubmit();
     };
@@ -100,9 +141,52 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({
                             />
                         </View>
 
+                        {/* Quick-Pick Saved Contacts Directory */}
+                        {savedDirectory.length > 0 && (
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Quick Select from Saved</Text>
+                                <View style={styles.savedPillsWrapper}>
+                                    {savedDirectory.map((contact) => {
+                                        const isSelected = attendeeEmails.some(
+                                            (e) => e.toLowerCase() === contact.toLowerCase()
+                                        );
+                                        const isSelf = contact.toLowerCase() === currentUserEmail;
+
+                                        return (
+                                            <TouchableOpacity
+                                                key={contact}
+                                                activeOpacity={0.7}
+                                                style={[
+                                                    styles.savedPill,
+                                                    isSelected && styles.savedPillActive,
+                                                ]}
+                                                onPress={() => handleToggleSavedContact(contact)}
+                                            >
+                                                {isSelected ? (
+                                                    <Check size={12} color="#FFFFFF" strokeWidth={2.5} />
+                                                ) : (
+                                                    <Plus size={12} color="#6366F1" strokeWidth={2.2} />
+                                                )}
+                                                <Text
+                                                    style={[
+                                                        styles.savedPillText,
+                                                        isSelected && styles.savedPillTextActive,
+                                                    ]}
+                                                    numberOfLines={1}
+                                                >
+                                                    {contact} {isSelf ? '(You)' : ''}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </View>
+                            </View>
+                        )}
+
+                        {/* Manual Attendee Input */}
                         <View style={styles.inputGroup}>
                             <View style={styles.attendeeLabelRow}>
-                                <Text style={styles.inputLabel}>Attendee Emails</Text>
+                                <Text style={styles.inputLabel}>Selected Recipients</Text>
                                 <Text style={styles.attendeeCount}>
                                     {attendeeEmails.length} added
                                 </Text>
@@ -113,7 +197,7 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({
                                     style={styles.emailTextInput}
                                     value={currentEmailInput}
                                     onChangeText={setCurrentEmailInput}
-                                    placeholder="name@company.com"
+                                    placeholder="Add new email (e.g. teammate@company.com)"
                                     placeholderTextColor="#94A3B8"
                                     autoCapitalize="none"
                                     autoCorrect={false}
@@ -132,23 +216,46 @@ export const MetadataModal: React.FC<MetadataModalProps> = ({
                                 </TouchableOpacity>
                             </View>
 
+                            {/* Active Recipient Chips */}
                             {attendeeEmails.length > 0 && (
                                 <View style={styles.chipsContainer}>
-                                    {attendeeEmails.map((email, index) => (
-                                        <View
-                                            key={`${email}-${index}`}
-                                            style={styles.emailChip}
-                                        >
-                                            <Users size={12} color="#475569" />
-                                            <Text style={styles.emailChipText} numberOfLines={1}>
-                                                {email}
-                                            </Text>
+                                    {attendeeEmails.map((email, index) => {
+                                        const isSelf = email.toLowerCase() === currentUserEmail;
+                                        return (
+                                            <View
+                                                key={`${email}-${index}`}
+                                                style={[
+                                                    styles.emailChip,
+                                                    isSelf && styles.emailChipSelf,
+                                                ]}
+                                            >
+                                                <Users
+                                                    size={12}
+                                                    color={isSelf ? '#4338CA' : '#475569'}
+                                                />
+                                                <Text
+                                                    style={[
+                                                        styles.emailChipText,
+                                                        isSelf && styles.emailChipTextSelf,
+                                                    ]}
+                                                    numberOfLines={1}
+                                                >
+                                                    {email} {isSelf ? '(You)' : ''}
+                                                </Text>
 
-                                            <TouchableOpacity onPress={() => onRemoveEmail(index)}>
-                                                <X size={13} color="#94A3B8" strokeWidth={2.2} />
-                                            </TouchableOpacity>
-                                        </View>
-                                    ))}
+                                                <TouchableOpacity
+                                                    onPress={() => onRemoveEmail(index)}
+                                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                                >
+                                                    <X
+                                                        size={13}
+                                                        color={isSelf ? '#6366F1' : '#94A3B8'}
+                                                        strokeWidth={2.2}
+                                                    />
+                                                </TouchableOpacity>
+                                            </View>
+                                        );
+                                    })}
                                 </View>
                             )}
                         </View>
@@ -227,6 +334,37 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#0F172A',
     },
+    savedPillsWrapper: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginTop: 2,
+    },
+    savedPill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        backgroundColor: '#F8FAFC',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 14,
+    },
+    savedPillActive: {
+        backgroundColor: '#6366F1',
+        borderColor: '#6366F1',
+    },
+    savedPillText: {
+        fontSize: 12,
+        color: '#475569',
+        fontWeight: '500',
+        maxWidth: 200,
+    },
+    savedPillTextActive: {
+        color: '#FFFFFF',
+        fontWeight: '600',
+    },
     attendeeLabelRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -284,11 +422,19 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#E2E8F0',
     },
+    emailChipSelf: {
+        backgroundColor: '#EEF2FF',
+        borderColor: '#C7D2FE',
+    },
     emailChipText: {
         fontSize: 12,
         color: '#334155',
         fontWeight: '500',
         maxWidth: 180,
+    },
+    emailChipTextSelf: {
+        color: '#3730A3',
+        fontWeight: '600',
     },
     modalActions: {
         flexDirection: 'row',

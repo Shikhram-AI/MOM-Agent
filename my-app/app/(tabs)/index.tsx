@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import { RecordingHeader } from '@/components/recording/RecordingHeader';
 import { SessionSetupCard } from '@/components/recording/SessionSetupCard';
 import { RecordingStage } from '@/components/recording/RecordingStage';
 import { MetadataModal } from '@/components/recording/MetadataModal';
+import { EmailVerificationModal } from '@/components/EmailVerificationModal';
+import { storage } from '@/hooks/storage';
 
 export default function RecordMeetingScreen() {
   const insets = useSafeAreaInsets();
@@ -49,6 +51,36 @@ export default function RecordMeetingScreen() {
   const [meetingDate, setMeetingDate] = useState<string>(getCurrentFormattedDate());
   const [attendeeEmails, setAttendeeEmails] = useState<string[]>([]);
 
+  // Email Verification & Default Sender State
+  const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [defaultUserEmail, setDefaultUserEmail] = useState<string>('');
+
+  useEffect(() => {
+    async function checkVerificationStatus() {
+      const verified = await storage.isUserVerified();
+      if (!verified) {
+        setShowAuthModal(true);
+      } else {
+        const savedEmail = await storage.getUserEmail();
+        if (savedEmail) {
+          setDefaultUserEmail(savedEmail);
+          setAttendeeEmails((prev) =>
+            prev.includes(savedEmail) ? prev : [savedEmail, ...prev]
+          );
+        }
+      }
+    }
+    checkVerificationStatus();
+  }, []);
+
+  const handleVerified = (email: string) => {
+    setDefaultUserEmail(email);
+    setShowAuthModal(false);
+    setAttendeeEmails((prev) =>
+      prev.includes(email) ? prev : [email, ...prev]
+    );
+  };
+
   const handleToggleRecord = async () => {
     if (isRecording) {
       const uri = await stopRecording();
@@ -63,7 +95,7 @@ export default function RecordMeetingScreen() {
   };
 
   const handleAddEmail = (email: string) => {
-    const trimmed = email.trim();
+    const trimmed = email.trim().toLowerCase();
     if (trimmed && !attendeeEmails.includes(trimmed)) {
       setAttendeeEmails((prev) => [...prev, trimmed]);
     }
@@ -79,13 +111,25 @@ export default function RecordMeetingScreen() {
     setShowMetadataModal(false);
 
     try {
+      // Ensure the verified user email is always present
+      const finalAttendees = Array.from(
+        new Set([defaultUserEmail, ...attendeeEmails].filter(Boolean))
+      );
+
+      // Save any newly added attendee emails into the local directory
+      if (finalAttendees.length > 0) {
+        await storage.addAttendees(finalAttendees);
+      }
+
       await uploadAndTranscribe(recordedUri, {
         title: meetingName.trim() || 'Untitled Meeting',
         date: meetingDate,
-        attendees: attendeeEmails,
+        attendees: finalAttendees,
+        created_by: defaultUserEmail, // <-- Passed to hook & backend
       });
 
-      setAttendeeEmails([]);
+      // Reset attendees back to just the verified user email for subsequent sessions
+      setAttendeeEmails(defaultUserEmail ? [defaultUserEmail] : []);
       setRecordedUri(null);
       if (resetTimer) resetTimer();
       router.push('/explore');
@@ -163,6 +207,12 @@ export default function RecordMeetingScreen() {
         onSubmit={handleConfirmAndUpload}
       />
 
+      {/* One-Time Email Verification Modal */}
+      <EmailVerificationModal
+        visible={showAuthModal}
+        onVerified={handleVerified}
+      />
+
       {/* Uploading Overlay */}
       <Modal visible={isUploading} transparent animationType="fade">
         <View style={styles.loadingOverlay}>
@@ -170,7 +220,7 @@ export default function RecordMeetingScreen() {
             <ActivityIndicator size="large" color="#6366F1" />
             <Text style={styles.loadingTitle}>Processing Minutes of Meeting</Text>
             <Text style={styles.loadingSubtitle}>
-              Uploading audio to storage and transcribing via Groq Whisper...
+              Uploading audio to storage and transcribing meeting...
             </Text>
           </View>
         </View>

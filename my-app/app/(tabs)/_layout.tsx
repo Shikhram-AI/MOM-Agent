@@ -1,7 +1,7 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform, StyleSheet } from 'react-native';
-import { Mic, FileText } from 'lucide-react-native';
+import { Mic, FileText, Users } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -51,6 +51,19 @@ export default function TabLayout() {
           title: 'Minutes',
           tabBarIcon: ({ color, focused }) => (
             <FileText
+              size={22}
+              color={color}
+              strokeWidth={focused ? 2.4 : 1.8}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="attendees"
+        options={{
+          title: 'Attendees',
+          tabBarIcon: ({ color, focused }) => (
+            <Users
               size={22}
               color={color}
               strokeWidth={focused ? 2.4 : 1.8}
