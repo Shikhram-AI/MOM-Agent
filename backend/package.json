@@ -15,11 +15,12 @@
   "type": "module",
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
+    "assemblyai": "^4.37.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "groq-sdk": "^1.5.0",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "resend": "^6.26.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
