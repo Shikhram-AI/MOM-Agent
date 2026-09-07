@@ -14,7 +14,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/adaptive-icon.svg"
+        "foregroundImage": "./assets/images/adaptive-icon.png"
       },
       "package": "com.krutriminternaltool.Metrik",
       "usesCleartextTraffic": true,
