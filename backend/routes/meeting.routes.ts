@@ -13,10 +13,13 @@ if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+// 250 MB ceiling (AssemblyAI supports up to 5 GB; 250 MB covers 2-4+ hours of recording safely)
+const MAX_FILE_SIZE_BYTES = 250 * 1024 * 1024;
+
 const upload = multer({
     dest: uploadDir,
     limits: {
-        fileSize: 25 * 1024 * 1024, // 25 MB Groq Whisper Limit
+        fileSize: MAX_FILE_SIZE_BYTES,
     },
     fileFilter: (_req, file, cb) => {
         const isAudioMimeType =
@@ -43,7 +46,7 @@ const handleUpload = (req: Request, res: Response, next: NextFunction) => {
             if (err.code === 'LIMIT_FILE_SIZE') {
                 res.status(400).json({
                     success: false,
-                    error: 'Audio file exceeds the 25 MB limit.',
+                    error: 'Audio file exceeds the allowed upload limit (max 250 MB).',
                 });
                 return;
             }

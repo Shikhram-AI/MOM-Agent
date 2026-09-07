@@ -5,7 +5,7 @@ import { MeetingService } from '../services/transcription.service.js';
 export class MeetingController {
     static async transcribeAudio(req: Request, res: Response): Promise<void> {
         const file = req.file;
-        const { title, date, duration, attendees } = req.body;
+        const { title, date, duration, attendees, created_by } = req.body;
 
         // 1. Validate Audio File
         if (!file) {
@@ -42,10 +42,31 @@ export class MeetingController {
         try {
             const result = await MeetingService.processTranscriptionPipeline({
                 file,
-                title: typeof title === 'string' && title.trim().length > 0 ? title.trim() : 'Untitled Meeting',
-                date: typeof date === 'string' && date.trim().length > 0 ? date.trim() : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                duration: typeof duration === 'string' && duration.trim().length > 0 ? duration.trim() : '00:00',
+
+                title:
+                    typeof title === 'string' && title.trim().length > 0
+                        ? title.trim()
+                        : 'Untitled Meeting',
+
+                date:
+                    typeof date === 'string' && date.trim().length > 0
+                        ? date.trim()
+                        : new Date().toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                        }),
+
+                duration:
+                    typeof duration === 'string' && duration.trim().length > 0
+                        ? duration.trim()
+                        : '00:00',
+
                 attendees: parsedAttendees,
+
+                ...(typeof created_by === 'string' && created_by.trim().length > 0
+                    ? { created_by: created_by.trim().toLowerCase() }
+                    : {}),
             });
 
             res.status(200).json({

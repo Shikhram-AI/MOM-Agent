@@ -1,7 +1,6 @@
 import fs from 'fs';
 import { randomUUID } from 'crypto';
-import { supabase, groq } from '../config.js';
-import { toFile } from 'groq-sdk';
+import { supabase, assemblyAi } from '../config.js';
 
 interface IngestMeetingParams {
   file: Express.Multer.File;
@@ -9,6 +8,7 @@ interface IngestMeetingParams {
   date?: string;
   duration?: string;
   attendees?: string[];
+  created_by?: string; // Owner email persistence
 }
 
 export class MeetingService {
@@ -18,6 +18,7 @@ export class MeetingService {
     date,
     duration,
     attendees = [],
+    created_by,
   }: IngestMeetingParams) {
     const meetingId = randomUUID();
     const fileExtension = file.originalname.split('.').pop()?.toLowerCase() || 'm4a';
@@ -40,7 +41,7 @@ export class MeetingService {
         throw new Error(`Supabase Storage Error: ${storageError.message}`);
       }
 
-      // 2. Insert initial meeting entry
+      // 2. Insert initial meeting entry (stores created_by in Supabase)
       const { error: dbInitError } = await supabase
         .from('meetings')
         .insert({
@@ -50,6 +51,7 @@ export class MeetingService {
           duration: duration || '00:00',
           audio_path: storagePath,
           attendees,
+          created_by: created_by?.trim().toLowerCase() || null,
           status: 'processing',
         });
 
@@ -59,77 +61,36 @@ export class MeetingService {
 
       meetingCreated = true;
 
-      // 3. Prepare audio stream for Groq
-      const audioFile = await toFile(
-        fs.createReadStream(file.path),
-        `meeting.${fileExtension}`,
-        { type: file.mimetype || 'audio/m4a' }
-      );
+      // 3. Technical vocabulary to bias recognition in AssemblyAI
+      const technicalKeywords = [
+        'MIRA', 'Groq', 'Whisper', 'AssemblyAI', 'LLM', 'RAG',
+        'Python', 'JavaScript', 'TypeScript', 'React', 'React Native',
+        'Node.js', 'Express', 'FastAPI', 'Streamlit', 'Expo', 'Expo Router',
+        'Supabase', 'MongoDB', 'PostgreSQL', 'API', 'REST API',
+        'backend', 'frontend', 'full stack', 'UI', 'UX', 'Render', 'Vercel',
+        'AWS', 'S3', 'Git', 'GitHub', 'OTP', 'authentication',
+        'Jira', 'sprint', 'action items', 'deadline', 'EOD',
+      ];
 
-      // 4. Request transcription from Groq Whisper with Hinglish technical context
-      const transcription = await groq.audio.transcriptions.create({
-        file: audioFile,
-        model: 'whisper-large-v3',
-        response_format: 'json',
-        temperature: 0.0,
-
-        prompt: `
-This is a technical software/product development meeting spoken in English, Hindi, and Hinglish.
-
-Transcribe the meeting faithfully and preserve the original meaning.
-
-IMPORTANT TRANSCRIPTION RULES:
-- Preserve English technical terms exactly when they are spoken.
-- Do NOT translate technical terms into Hindi.
-- Do NOT replace technical words with phonetically similar Hindi words.
-- Pay special attention to software development terminology, product names, platform names, programming languages, frameworks, libraries, tools, APIs, deployment platforms, databases, AI/LLM terminology, UI/UX terminology, and meeting/task terminology.
-- Preserve names of people, products, companies, projects, websites, and platforms as accurately as possible.
-- Preserve dates, times, percentages, deadlines, and quantities exactly.
-- Preserve words such as "today", "tomorrow", "Tuesday", "Wednesday", "EOD", "deadline", "meeting", "task", "action item", "owner", "integration", and "complete".
-- Do not invent missing words or sentences.
-- Do not summarize or interpret the meeting.
-- Do not turn unclear audio into confident text.
-- If a phrase is unclear, transcribe the closest audible wording rather than inventing a plausible sentence.
-- Remove obvious non-speech artifacts and repeated meaningless fragments when they are clearly transcription noise.
-- Keep the transcript in natural Hinglish when the speaker switches between Hindi and English.
-
-IMPORTANT TECHNICAL VOCABULARY:
-Chatbot, AI agent, MIRA, OpenRouter, Groq, Whisper, LLM, RAG, knowledge base,
-Python, JavaScript, TypeScript, React, React Native, Node.js, Express,
-Streamlit, Llama, FastAPI, Expo, Expo Router, n8n, Make,
-Supabase, MongoDB, MySQL, PostgreSQL,
-API, REST API, backend, frontend, full stack,
-UI, UX, component, responsive, deployment, integration,
-Render, Vercel, AWS, S3, GitHub, Git,
-OTP, authentication, login, signup,
-website, dashboard, portal, mobile app,
-Zoom, Google Meet, WhatsApp,
-Jira, task, issue, sprint,
-course, project, internship, demo,
-action item, deadline, EOD, owner, review.
-
-When technical terms appear inside Hindi sentences, keep the technical terms in their English form.
-
-Example:
-"Python mein backend banana hai"
-should remain:
-"Python mein backend banana hai"
-
-Do not convert it into:
-"पाइथन में बैकएंड बनाना है"
-
-Similarly preserve terms such as:
-"Streamlit", "Llama", "knowledge base", "website integration", "API", "frontend", "backend", "deployment", and "action item".
-
-The output must be ONLY the transcript.
-`,
+      // 4. Request transcription using AssemblyAI SDK (without speaker diarization)
+      const transcriptRecord = await assemblyAi.transcripts.transcribe({
+        audio: file.path,
+        word_boost: technicalKeywords,
+        boost_param: 'high',
       });
+
+      if (transcriptRecord.status === 'error') {
+        throw new Error(`AssemblyAI Error: ${transcriptRecord.error}`);
+      }
+
+      // Plain continuous transcript without speaker labels
+      const plainTranscript = transcriptRecord.text || '';
 
       // 5. Update DB record with transcript & mark completed
       const { data: updatedRecord, error: dbUpdateError } = await supabase
         .from('meetings')
         .update({
-          transcript: transcription.text,
+          transcript: plainTranscript,
           status: 'completed',
           updated_at: new Date().toISOString(),
         })
@@ -141,7 +102,7 @@ The output must be ONLY the transcript.
         throw new Error(`Supabase DB Update Error: ${dbUpdateError.message}`);
       }
 
-      // 6. Trigger Make / Agent Webhook for LLM processing via OpenRouter
+      // 6. Trigger Make / Agent Webhook for LLM processing via OpenRouter (omitting created_by)
       const webhookUrl = process.env.MAKE_WEBHOOK_URL;
 
       if (webhookUrl) {

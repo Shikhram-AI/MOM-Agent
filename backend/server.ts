@@ -2,6 +2,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import cors from 'cors';
 import { MulterError } from 'multer';
 import meetingRoutes from './routes/meeting.routes.js';
+import authRoutes from './routes/auth.routes.js';
 import { CONFIG } from './config.js';
 
 const app = express();
@@ -29,6 +30,7 @@ app.get('/health', (_req: Request, res: Response) => {
 
 // API Routes
 app.use('/api/meetings', meetingRoutes);
+app.use('/api/auth', authRoutes);
 
 // 404 Catch-All Route
 app.use((_req: Request, res: Response) => {
