@@ -1,30 +1,51 @@
 import { useState, useEffect, useRef } from 'react';
 import { Platform, Alert } from 'react-native';
 import { useAudioRecorder, AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { API_BASE_URL } from './api';
+
+const KEEP_AWAKE_TAG = 'MIRA_RECORDING_SESSION';
 
 interface UploadPayload {
     title: string;
     date: string;
     attendees: string[];
-    created_by?: string; // <-- 1. Add created_by here
+    created_by?: string;
 }
 
 export const useRecordMeeting = () => {
-    // Initialize expo-audio recorder with HIGH_QUALITY preset (.m4a)
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
     const [isRecording, setIsRecording] = useState<boolean>(false);
+    const [isPaused, setIsPaused] = useState<boolean>(false);
     const [secondsElapsed, setSecondsElapsed] = useState<number>(0);
     const [isUploading, setIsUploading] = useState<boolean>(false);
 
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const recordedDurationRef = useRef<number>(0);
 
-    // Cleanup on unmount
+    const stopTimer = () => {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+    };
+
+    const startTimer = () => {
+        stopTimer();
+        timerRef.current = setInterval(() => {
+            setSecondsElapsed((prev) => {
+                const next = prev + 1;
+                recordedDurationRef.current = next;
+                return next;
+            });
+        }, 1000);
+    };
+
     useEffect(() => {
         return () => {
-            if (timerRef.current) clearInterval(timerRef.current);
+            stopTimer();
+            deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => { });
         };
     }, []);
 
@@ -36,18 +57,13 @@ export const useRecordMeeting = () => {
         return hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
     };
 
-    /**
-     * Explicitly reset seconds counter & clear any running interval
-     */
     const resetTimer = () => {
-        if (timerRef.current) clearInterval(timerRef.current);
+        stopTimer();
         setSecondsElapsed(0);
         recordedDurationRef.current = 0;
+        setIsPaused(false);
     };
 
-    /**
-     * Start recording audio with expo-audio
-     */
     const startRecording = async () => {
         try {
             const permission = await AudioModule.requestRecordingPermissionsAsync();
@@ -64,54 +80,74 @@ export const useRecordMeeting = () => {
             await audioRecorder.prepareToRecordAsync();
             audioRecorder.record();
 
+            // Prevent phone from locking/sleeping
+            await activateKeepAwakeAsync(KEEP_AWAKE_TAG);
+
             setIsRecording(true);
+            setIsPaused(false);
             setSecondsElapsed(0);
             recordedDurationRef.current = 0;
 
-            if (timerRef.current) clearInterval(timerRef.current);
-            timerRef.current = setInterval(() => {
-                setSecondsElapsed((prev) => {
-                    const next = prev + 1;
-                    recordedDurationRef.current = next;
-                    return next;
-                });
-            }, 1000);
+            startTimer();
         } catch (err: any) {
             console.error('Failed to start recording:', err);
             Alert.alert('Recording Error', 'Unable to start recording audio.');
         }
     };
 
-    /**
-     * Stop recording and get local file URI
-     */
+    const pauseRecording = async () => {
+        try {
+            if (!isRecording || isPaused) return;
+
+            // expo-audio supports pause()
+            audioRecorder.pause();
+            stopTimer();
+            setIsPaused(true);
+
+            // Allow device sleep while paused (optional; comment out if you want it awake while paused too)
+            await deactivateKeepAwake(KEEP_AWAKE_TAG);
+        } catch (err) {
+            console.error('Failed to pause recording:', err);
+        }
+    };
+
+    const resumeRecording = async () => {
+        try {
+            if (!isRecording || !isPaused) return;
+
+            audioRecorder.record();
+            await activateKeepAwakeAsync(KEEP_AWAKE_TAG);
+
+            setIsPaused(false);
+            startTimer();
+        } catch (err) {
+            console.error('Failed to resume recording:', err);
+        }
+    };
+
     const stopRecording = async (): Promise<string | null> => {
         try {
-            if (timerRef.current) clearInterval(timerRef.current);
+            stopTimer();
             setIsRecording(false);
+            setIsPaused(false);
 
             await audioRecorder.stop();
             await setAudioModeAsync({ allowsRecording: false });
+            await deactivateKeepAwake(KEEP_AWAKE_TAG);
 
-            const uri = audioRecorder.uri;
-            return uri || null;
+            return audioRecorder.uri || null;
         } catch (err) {
             console.error('Failed to stop recording:', err);
+            await deactivateKeepAwake(KEEP_AWAKE_TAG);
             return null;
         }
     };
 
-    /**
-     * Upload audio to Express + AssemblyAI pipeline
-     */
     const uploadAndTranscribe = async (
         audioUri: string,
-        { title, date, attendees, created_by }: UploadPayload // <-- 2. Destructure created_by
+        { title, date, attendees, created_by }: UploadPayload
     ) => {
-        if (!audioUri) {
-            throw new Error('No audio recording found.');
-        }
-
+        if (!audioUri) throw new Error('No audio recording found.');
         setIsUploading(true);
 
         try {
@@ -130,7 +166,6 @@ export const useRecordMeeting = () => {
             formData.append('duration', formatTimer(recordedDurationRef.current || secondsElapsed));
             formData.append('attendees', JSON.stringify(attendees || []));
 
-            // 3. Append created_by to FormData
             if (created_by) {
                 formData.append('created_by', created_by.trim().toLowerCase());
             }
@@ -138,13 +173,10 @@ export const useRecordMeeting = () => {
             const response = await fetch(`${API_BASE_URL}/meetings/transcribe`, {
                 method: 'POST',
                 body: formData,
-                headers: {
-                    Accept: 'application/json',
-                },
+                headers: { Accept: 'application/json' },
             });
 
             const json = await response.json();
-
             if (!response.ok || !json.success) {
                 throw new Error(json.error || 'Failed to upload and transcribe audio.');
             }
@@ -157,10 +189,13 @@ export const useRecordMeeting = () => {
 
     return {
         isRecording,
+        isPaused,
         secondsElapsed,
         formattedTime: formatTimer(secondsElapsed),
         isUploading,
         startRecording,
+        pauseRecording,
+        resumeRecording,
         stopRecording,
         uploadAndTranscribe,
         resetTimer,

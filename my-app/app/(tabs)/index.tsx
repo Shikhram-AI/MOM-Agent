@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Mic, Square } from 'lucide-react-native';
+import { Mic, Square, Pause, Play } from 'lucide-react-native';
 import { useRecordMeeting } from '@/hooks/useRecordMeeting';
 
 import { RecordingHeader } from '@/components/recording/RecordingHeader';
@@ -28,9 +28,12 @@ export default function RecordMeetingScreen() {
 
   const {
     isRecording,
+    isPaused,
     formattedTime,
     isUploading,
     startRecording,
+    pauseRecording,
+    resumeRecording,
     stopRecording,
     uploadAndTranscribe,
     resetTimer,
@@ -44,14 +47,12 @@ export default function RecordMeetingScreen() {
     });
   };
 
-  // State
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const [showMetadataModal, setShowMetadataModal] = useState<boolean>(false);
   const [meetingName, setMeetingName] = useState<string>('Sync with Core Team');
   const [meetingDate, setMeetingDate] = useState<string>(getCurrentFormattedDate());
   const [attendeeEmails, setAttendeeEmails] = useState<string[]>([]);
 
-  // Email Verification & Default Sender State
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [defaultUserEmail, setDefaultUserEmail] = useState<string>('');
 
@@ -81,16 +82,12 @@ export default function RecordMeetingScreen() {
     );
   };
 
-  const handleToggleRecord = async () => {
-    if (isRecording) {
-      const uri = await stopRecording();
-      if (uri) {
-        setMeetingDate(getCurrentFormattedDate());
-        setRecordedUri(uri);
-        setShowMetadataModal(true);
-      }
-    } else {
-      await startRecording();
+  const handleStopRecording = async () => {
+    const uri = await stopRecording();
+    if (uri) {
+      setMeetingDate(getCurrentFormattedDate());
+      setRecordedUri(uri);
+      setShowMetadataModal(true);
     }
   };
 
@@ -111,12 +108,10 @@ export default function RecordMeetingScreen() {
     setShowMetadataModal(false);
 
     try {
-      // Ensure the verified user email is always present
       const finalAttendees = Array.from(
         new Set([defaultUserEmail, ...attendeeEmails].filter(Boolean))
       );
 
-      // Save any newly added attendee emails into the local directory
       if (finalAttendees.length > 0) {
         await storage.addAttendees(finalAttendees);
       }
@@ -125,10 +120,9 @@ export default function RecordMeetingScreen() {
         title: meetingName.trim() || 'Untitled Meeting',
         date: meetingDate,
         attendees: finalAttendees,
-        created_by: defaultUserEmail, // <-- Passed to hook & backend
+        created_by: defaultUserEmail,
       });
 
-      // Reset attendees back to just the verified user email for subsequent sessions
       setAttendeeEmails(defaultUserEmail ? [defaultUserEmail] : []);
       setRecordedUri(null);
       if (resetTimer) resetTimer();
@@ -144,53 +138,70 @@ export default function RecordMeetingScreen() {
         styles.screen,
         {
           paddingTop: Math.max(insets.top, Platform.OS === 'android' ? 24 : 16),
-          paddingBottom: 20,
+          paddingBottom: insets.bottom + 12,
         },
       ]}
     >
       <StatusBar barStyle="dark-content" backgroundColor="#FAFAFA" />
 
-      {/* Top Bar Header */}
       <RecordingHeader />
 
-      {/* Session Context Card */}
       <SessionSetupCard
         meetingName={meetingName}
         meetingDate={meetingDate}
         isRecording={isRecording}
       />
 
-      {/* Central Visualizer and Timer */}
       <RecordingStage
-        isRecording={isRecording}
+        isRecording={isRecording && !isPaused}
         formattedTime={formattedTime}
       />
 
       {/* Action Footer */}
       <View style={styles.footerSection}>
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={[
-            styles.actionButton,
-            isRecording ? styles.actionButtonStop : styles.actionButtonStart,
-          ]}
-          onPress={handleToggleRecord}
-        >
-          {isRecording ? (
-            <>
+        {isRecording ? (
+          <View style={styles.activeRecordingRow}>
+            {/* Pause / Resume Button */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.actionButton, styles.pauseButton]}
+              onPress={isPaused ? resumeRecording : pauseRecording}
+            >
+              {isPaused ? (
+                <>
+                  <Play size={18} color="#0F172A" fill="#0F172A" />
+                  <Text style={styles.pauseButtonLabel}>Resume</Text>
+                </>
+              ) : (
+                <>
+                  <Pause size={18} color="#0F172A" fill="#0F172A" />
+                  <Text style={styles.pauseButtonLabel}>Pause</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {/* Stop & Submit Button */}
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[styles.actionButton, styles.stopButton]}
+              onPress={handleStopRecording}
+            >
               <Square size={18} color="#FFFFFF" fill="#FFFFFF" />
-              <Text style={styles.buttonLabel}>Stop & Process MoM</Text>
-            </>
-          ) : (
-            <>
-              <Mic size={18} color="#FFFFFF" strokeWidth={2.2} />
-              <Text style={styles.buttonLabel}>Start Recording</Text>
-            </>
-          )}
-        </TouchableOpacity>
+              <Text style={styles.stopButtonLabel}>Stop & Process</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[styles.actionButton, styles.startButton]}
+            onPress={startRecording}
+          >
+            <Mic size={18} color="#FFFFFF" strokeWidth={2.2} />
+            <Text style={styles.startButtonLabel}>Start Recording</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Attendees & Metadata Modal */}
       <MetadataModal
         visible={showMetadataModal}
         meetingName={meetingName}
@@ -207,13 +218,11 @@ export default function RecordMeetingScreen() {
         onSubmit={handleConfirmAndUpload}
       />
 
-      {/* One-Time Email Verification Modal */}
       <EmailVerificationModal
         visible={showAuthModal}
         onVerified={handleVerified}
       />
 
-      {/* Uploading Overlay */}
       <Modal visible={isUploading} transparent animationType="fade">
         <View style={styles.loadingOverlay}>
           <View style={styles.loadingCard}>
@@ -239,22 +248,44 @@ const styles = StyleSheet.create({
   footerSection: {
     width: '100%',
   },
+  activeRecordingRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 8,
     height: 54,
     borderRadius: 14,
     elevation: 3,
   },
-  actionButtonStart: {
+  startButton: {
+    width: '100%',
     backgroundColor: '#0F172A',
   },
-  actionButtonStop: {
+  pauseButton: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  stopButton: {
+    flex: 1.4,
     backgroundColor: '#DC2626',
   },
-  buttonLabel: {
+  startButtonLabel: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  pauseButtonLabel: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  stopButtonLabel: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '600',
